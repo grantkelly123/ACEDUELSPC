@@ -1,0 +1,568 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local HttpService = game:GetService("HttpService")
+local LP = Players.LocalPlayer
+local PlayerGui = LP:WaitForChild("PlayerGui")
+
+local BG = Color3.fromRGB(5, 5, 6)
+local CARD_BG = Color3.fromRGB(14, 14, 16)
+local BTN_BG = Color3.fromRGB(20, 20, 23)
+local WHITE = Color3.fromRGB(245, 245, 245)
+local GREY = Color3.fromRGB(155, 155, 160)
+local STROKE = Color3.fromRGB(75, 75, 80)
+local BACKGROUND_ASSET = "rbxassetid://97328899571608"
+local DISCORD_TEXT = "discord.gg/aceduels"
+local CONFIG_FILE = "AceDuelsAutoBatConfig.json"
+
+local State = {
+    autoBatToggled = false,
+    hittingCooldown = false,
+    guiVisible = true,
+    mobileMode = false,
+    autoSwingToggledOn = true,
+}
+
+local Keys = {
+    autoBat = Enum.KeyCode.X,
+    autoBatType = "Keyboard",
+    guiHide = Enum.KeyCode.LeftControl,
+}
+
+local h, hrp = nil, nil
+
+local function keyToString(key)
+    return key and tostring(key):gsub("Enum.KeyCode.", "") or "None"
+end
+
+local function stringToKeyCode(value)
+    if type(value) ~= "string" or value == "" or value == "None" then return nil end
+    return Enum.KeyCode[value]
+end
+
+local canSave = type(writefile) == "function" and type(readfile) == "function"
+local function saveConfig()
+    if not canSave then return end
+    local cfg = {
+        autoBatKey = keyToString(Keys.autoBat),
+        autoBatKeyType = Keys.autoBatType,
+        mobileMode = State.mobileMode,
+        autoSwingToggledOn = State.autoSwingToggledOn,
+    }
+    pcall(function()
+        writefile(CONFIG_FILE, HttpService:JSONEncode(cfg))
+    end)
+end
+
+local function loadConfig()
+    if not canSave then return end
+    local hasFile = false
+    pcall(function() hasFile = isfile and isfile(CONFIG_FILE) end)
+    if not hasFile then return end
+    local ok, cfg = pcall(function()
+        return HttpService:JSONDecode(readfile(CONFIG_FILE))
+    end)
+    if not ok or type(cfg) ~= "table" then return end
+    if cfg.autoBatKey then Keys.autoBat = stringToKeyCode(cfg.autoBatKey) or Keys.autoBat end
+    if cfg.autoBatKeyType then Keys.autoBatType = cfg.autoBatKeyType end
+    if cfg.mobileMode ~= nil then State.mobileMode = cfg.mobileMode == true end
+    if cfg.autoSwingToggledOn ~= nil then State.autoSwingToggledOn = cfg.autoSwingToggledOn == true end
+end
+loadConfig()
+
+for _, name in ipairs({"SakuraAutoBatDesyncGUI", "EnvyAutoBatDesyncGUI", "MwvaneNewaBatDesyncGUI", "PhazeAutoBatDesyncGUI", "HotPinkAutoBatDesyncGUI", "PetalAutoBatGUI", "AceDuelsAutoBatGUI"}) do
+    local old = PlayerGui:FindFirstChild(name) or game:GetService("CoreGui"):FindFirstChild(name)
+    if old then old:Destroy() end
+end
+
+local function makeCorner(parent, radius)
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, radius)
+    c.Parent = parent
+    return c
+end
+
+local function makeStroke(parent, color, thickness, transparency)
+    local s = Instance.new("UIStroke")
+    s.Color = color
+    s.Thickness = thickness or 1
+    s.Transparency = transparency or 0
+    s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    s.Parent = parent
+    return s
+end
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "AceDuelsAutoBatGUI"
+gui.ResetOnSpawn = false
+gui.DisplayOrder = 999
+gui.IgnoreGuiInset = true
+gui.Parent = PlayerGui
+
+local main = Instance.new("Frame")
+main.Name = "Main"
+main.Size = UDim2.new(0, 210, 0, 105) -- original size kept
+main.Position = UDim2.new(0.5, -105, 0.5, -65) -- original position kept
+main.BackgroundColor3 = BG
+main.BackgroundTransparency = 0.05
+main.BorderSizePixel = 0
+main.Active = true
+main.ClipsDescendants = true
+main.Parent = gui
+makeCorner(main, 10)
+local mainStroke = makeStroke(main, Color3.fromRGB(95, 95, 100), 1, 0.12)
+
+local bgImage = Instance.new("ImageLabel")
+bgImage.Name = "AceCardsBackground"
+bgImage.Size = UDim2.new(1, 0, 1, 0)
+bgImage.BackgroundTransparency = 1
+bgImage.Image = BACKGROUND_ASSET
+bgImage.ImageTransparency = 0.25
+bgImage.ScaleType = Enum.ScaleType.Crop
+bgImage.ZIndex = 1
+bgImage.Parent = main
+makeCorner(bgImage, 10)
+
+local darkFilm = Instance.new("Frame")
+darkFilm.Name = "DarkFilm"
+darkFilm.Size = UDim2.new(1, 0, 1, 0)
+darkFilm.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+darkFilm.BackgroundTransparency = 0.34
+darkFilm.BorderSizePixel = 0
+darkFilm.ZIndex = 2
+darkFilm.Parent = main
+makeCorner(darkFilm, 10)
+
+-- draggable, no lock gui
+local dragging, dragInput, dragStart, mainStart = false, nil, nil, nil
+main.InputBegan:Connect(function(inp)
+    if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = inp.Position
+        mainStart = main.Position
+        inp.Changed:Connect(function()
+            if inp.UserInputState == Enum.UserInputState.End then dragging = false end
+        end)
+    end
+end)
+main.InputChanged:Connect(function(inp)
+    if inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch then dragInput = inp end
+end)
+UIS.InputChanged:Connect(function(inp)
+    if inp == dragInput and dragging then
+        local dx = inp.Position.X - dragStart.X
+        local dy = inp.Position.Y - dragStart.Y
+        main.Position = UDim2.new(mainStart.X.Scale, mainStart.X.Offset + dx, mainStart.Y.Scale, mainStart.Y.Offset + dy)
+    end
+end)
+
+local modeToggleBtn = Instance.new("TextButton")
+modeToggleBtn.Name = "ModeToggle"
+modeToggleBtn.Size = UDim2.new(0, 52, 0, 22)
+modeToggleBtn.Position = UDim2.new(0, 9, 0, 8)
+modeToggleBtn.BackgroundColor3 = BTN_BG
+modeToggleBtn.BackgroundTransparency = 0.42
+modeToggleBtn.BorderSizePixel = 0
+modeToggleBtn.AutoButtonColor = false
+modeToggleBtn.Text = State.mobileMode and "PC" or "MOBILE"
+modeToggleBtn.TextColor3 = WHITE
+modeToggleBtn.Font = Enum.Font.GothamBlack
+modeToggleBtn.TextSize = 8
+modeToggleBtn.ZIndex = 10
+modeToggleBtn.Parent = main
+makeCorner(modeToggleBtn, 7)
+local modeStroke = makeStroke(modeToggleBtn, STROKE, 1, 0.25)
+
+local titleLbl = Instance.new("TextLabel")
+titleLbl.Name = "Title"
+titleLbl.Size = UDim2.new(0, 78, 0, 13)
+titleLbl.Position = UDim2.new(1, -106, 0, 9)
+titleLbl.BackgroundTransparency = 1
+titleLbl.Text = "ACE DUELS"
+titleLbl.TextColor3 = WHITE
+titleLbl.Font = Enum.Font.GothamBlack
+titleLbl.TextSize = 9
+titleLbl.TextXAlignment = Enum.TextXAlignment.Right
+titleLbl.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+titleLbl.TextStrokeTransparency = 0.5
+titleLbl.ZIndex = 10
+titleLbl.Parent = main
+
+local subtitleLbl = Instance.new("TextLabel")
+subtitleLbl.Name = "Subtitle"
+subtitleLbl.Size = UDim2.new(0, 78, 0, 8)
+subtitleLbl.Position = UDim2.new(1, -106, 0, 22)
+subtitleLbl.BackgroundTransparency = 1
+subtitleLbl.Text = ""
+subtitleLbl.TextColor3 = WHITE
+subtitleLbl.Font = Enum.Font.GothamBold
+subtitleLbl.TextSize = 4
+subtitleLbl.TextTransparency = 0.05
+subtitleLbl.TextXAlignment = Enum.TextXAlignment.Right
+subtitleLbl.ZIndex = 10
+subtitleLbl.Parent = main
+
+local closeBtn = Instance.new("TextButton")
+closeBtn.Name = "Close"
+closeBtn.Size = UDim2.new(0, 16, 0, 16)
+closeBtn.Position = UDim2.new(1, -20, 0, 6)
+closeBtn.BackgroundColor3 = BTN_BG
+closeBtn.BackgroundTransparency = 0.45
+closeBtn.BorderSizePixel = 0
+closeBtn.AutoButtonColor = false
+closeBtn.Text = "X"
+closeBtn.TextColor3 = WHITE
+closeBtn.Font = Enum.Font.GothamBlack
+closeBtn.TextSize = 8
+closeBtn.ZIndex = 11
+closeBtn.Parent = main
+makeCorner(closeBtn, 6)
+makeStroke(closeBtn, STROKE, 1, 0.35)
+closeBtn.MouseButton1Click:Connect(function()
+    State.autoBatToggled = false
+    gui:Destroy()
+end)
+
+local keybindCard = Instance.new("TextButton")
+keybindCard.Name = "KeybindCard"
+keybindCard.Size = UDim2.new(1, -16, 0, 26)
+keybindCard.Position = UDim2.new(0, 8, 0, 38)
+keybindCard.BackgroundColor3 = CARD_BG
+keybindCard.BackgroundTransparency = 0.50
+keybindCard.BorderSizePixel = 0
+keybindCard.AutoButtonColor = false
+keybindCard.Text = ""
+keybindCard.ZIndex = 5
+keybindCard.Parent = main
+makeCorner(keybindCard, 7)
+local keybindStroke = makeStroke(keybindCard, STROKE, 1, 0.35)
+
+local keyLbl = Instance.new("TextLabel")
+keyLbl.Name = "KeybindLabel"
+keyLbl.Size = UDim2.new(0, 90, 1, 0)
+keyLbl.Position = UDim2.new(0, 10, 0, 0)
+keyLbl.BackgroundTransparency = 1
+keyLbl.Text = "KEYBIND"
+keyLbl.TextColor3 = WHITE
+keyLbl.Font = Enum.Font.GothamBlack
+keyLbl.TextSize = 8
+keyLbl.TextXAlignment = Enum.TextXAlignment.Left
+keyLbl.ZIndex = 6
+keyLbl.Parent = keybindCard
+
+local autoBatButtonText = Instance.new("TextLabel")
+autoBatButtonText.Name = "AutoBatButtonText"
+autoBatButtonText.Size = UDim2.new(1, -20, 1, 0)
+autoBatButtonText.Position = UDim2.new(0, 10, 0, 0)
+autoBatButtonText.BackgroundTransparency = 1
+autoBatButtonText.Text = "AUTO BAT"
+autoBatButtonText.TextColor3 = WHITE
+autoBatButtonText.Font = Enum.Font.GothamBlack
+autoBatButtonText.TextSize = 8
+autoBatButtonText.TextXAlignment = Enum.TextXAlignment.Center
+autoBatButtonText.ZIndex = 8
+autoBatButtonText.Visible = false
+autoBatButtonText.Parent = keybindCard
+
+local keyBtn = Instance.new("TextButton")
+keyBtn.Name = "KeyButton"
+keyBtn.Size = UDim2.new(0, 42, 0, 18)
+keyBtn.Position = UDim2.new(1, -52, 0.5, -9)
+keyBtn.BackgroundColor3 = BTN_BG
+keyBtn.BackgroundTransparency = 0.38
+keyBtn.BorderSizePixel = 0
+keyBtn.AutoButtonColor = false
+keyBtn.Text = keyToString(Keys.autoBat)
+keyBtn.TextColor3 = WHITE
+keyBtn.Font = Enum.Font.GothamBlack
+keyBtn.TextSize = 8
+keyBtn.ZIndex = 9
+keyBtn.Parent = keybindCard
+makeCorner(keyBtn, 6)
+local keyBtnStroke = makeStroke(keyBtn, STROKE, 1, 0.34)
+
+local autoSwingBtn = Instance.new("TextButton")
+autoSwingBtn.Name = "AutoSwingButton"
+autoSwingBtn.Size = UDim2.new(1, -16, 0, 24)
+autoSwingBtn.Position = UDim2.new(0, 8, 0, 68)
+autoSwingBtn.BackgroundColor3 = CARD_BG
+autoSwingBtn.BackgroundTransparency = 0.54
+autoSwingBtn.BorderSizePixel = 0
+autoSwingBtn.AutoButtonColor = false
+autoSwingBtn.Text = "AUTO SWING"
+autoSwingBtn.TextColor3 = WHITE
+autoSwingBtn.Font = Enum.Font.GothamBlack
+autoSwingBtn.TextSize = 8
+autoSwingBtn.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+autoSwingBtn.TextStrokeTransparency = 0.65
+autoSwingBtn.ZIndex = 7
+autoSwingBtn.Parent = main
+makeCorner(autoSwingBtn, 7)
+local autoSwingStroke = makeStroke(autoSwingBtn, State.autoSwingToggledOn and WHITE or STROKE, State.autoSwingToggledOn and 1.25 or 1, State.autoSwingToggledOn and 0.02 or 0.36)
+
+-- extra invisible click layers so both AUTO BAT and AUTO SWING behave like simple buttons on PC/mobile
+local autoBatClickButton = Instance.new("TextButton")
+autoBatClickButton.Name = "AutoBatClickButton"
+autoBatClickButton.Size = UDim2.new(1, 0, 1, 0)
+autoBatClickButton.BackgroundTransparency = 1
+autoBatClickButton.Text = ""
+autoBatClickButton.AutoButtonColor = false
+autoBatClickButton.ZIndex = 20
+autoBatClickButton.Parent = keybindCard
+
+local autoSwingClickButton = Instance.new("TextButton")
+autoSwingClickButton.Name = "AutoSwingClickButton"
+autoSwingClickButton.Size = UDim2.new(1, 0, 1, 0)
+autoSwingClickButton.BackgroundTransparency = 1
+autoSwingClickButton.Text = ""
+autoSwingClickButton.AutoButtonColor = false
+autoSwingClickButton.ZIndex = 20
+autoSwingClickButton.Parent = autoSwingBtn
+
+local footer = Instance.new("TextLabel")
+footer.Name = "DiscordFooter"
+footer.Size = UDim2.new(1, -16, 0, 9)
+footer.Position = UDim2.new(0, 8, 1, -10)
+footer.BackgroundTransparency = 1
+footer.Text = ""
+footer.TextColor3 = WHITE
+footer.Font = Enum.Font.GothamBold
+footer.TextSize = 5
+footer.TextTransparency = 0.02
+footer.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+footer.TextStrokeTransparency = 0.45
+footer.TextXAlignment = Enum.TextXAlignment.Center
+footer.ZIndex = 10
+footer.Visible = false
+footer.Parent = main
+
+local function setAutoBatVisual(on)
+    if on then
+        keybindStroke.Color = WHITE
+        keybindStroke.Transparency = 0.03
+        keybindStroke.Thickness = 1.25
+    else
+        keybindStroke.Color = STROKE
+        keybindStroke.Transparency = 0.35
+        keybindStroke.Thickness = 1
+    end
+end
+
+local function setAutoSwingVisual(on)
+    autoSwingBtn.Text = "AUTO SWING"
+    if on then
+        autoSwingStroke.Color = WHITE
+        autoSwingStroke.Transparency = 0.02
+        autoSwingStroke.Thickness = 1.25
+    else
+        autoSwingStroke.Color = STROKE
+        autoSwingStroke.Transparency = 0.36
+        autoSwingStroke.Thickness = 1
+    end
+end
+
+local function applyMode()
+    -- size stays exactly the same for PC and mobile
+    main.Size = UDim2.new(0, 210, 0, 105)
+    if State.mobileMode then
+        modeToggleBtn.Text = "PC"
+        keyLbl.Visible = false
+        keyBtn.Visible = false
+        autoBatButtonText.Visible = true
+        autoBatClickButton.Size = UDim2.new(1, 0, 1, 0)
+        autoBatClickButton.Position = UDim2.new(0, 0, 0, 0)
+    else
+        modeToggleBtn.Text = "MOBILE"
+        keyLbl.Visible = true
+        keyLbl.Text = "KEYBIND"
+        keyBtn.Visible = true
+        autoBatButtonText.Visible = false
+        autoBatClickButton.Size = UDim2.new(1, -62, 1, 0)
+        autoBatClickButton.Position = UDim2.new(0, 0, 0, 0)
+    end
+end
+
+local kListening = false
+local kConn = nil
+local function stopListen(key)
+    kListening = false
+    if kConn then kConn:Disconnect(); kConn = nil end
+    keyBtn.TextColor3 = WHITE
+    keyBtnStroke.Color = STROKE
+    keyBtnStroke.Transparency = 0.34
+    if key then
+        keyBtn.Text = key.Name
+        Keys.autoBat = key
+        saveConfig()
+    end
+end
+
+keyBtn.MouseButton1Click:Connect(function()
+    if kListening then stopListen(nil); return end
+    kListening = true
+    keyBtn.Text = "..."
+    keyBtnStroke.Color = WHITE
+    keyBtnStroke.Transparency = 0.02
+    kConn = UIS.InputBegan:Connect(function(inp)
+        if not kListening then return end
+        if inp.UserInputType == Enum.UserInputType.Keyboard then
+            if inp.KeyCode == Enum.KeyCode.Escape then stopListen(nil); return end
+            Keys.autoBatType = "Keyboard"
+            stopListen(inp.KeyCode)
+        elseif inp.UserInputType == Enum.UserInputType.Gamepad1 then
+            Keys.autoBatType = "Gamepad"
+            stopListen(inp.KeyCode)
+        end
+    end)
+end)
+
+autoBatClickButton.MouseButton1Click:Connect(function()
+    if kListening then return end
+    State.autoBatToggled = not State.autoBatToggled
+    setAutoBatVisual(State.autoBatToggled)
+    saveConfig()
+end)
+
+autoSwingClickButton.MouseButton1Click:Connect(function()
+    State.autoSwingToggledOn = not State.autoSwingToggledOn
+    setAutoSwingVisual(State.autoSwingToggledOn)
+    saveConfig()
+end)
+
+modeToggleBtn.MouseButton1Click:Connect(function()
+    State.mobileMode = not State.mobileMode
+    applyMode()
+    saveConfig()
+    TweenService:Create(modeStroke, TweenInfo.new(0.15), {Color = WHITE, Transparency = 0.02}):Play()
+    task.delay(0.15, function()
+        if modeStroke then TweenService:Create(modeStroke, TweenInfo.new(0.15), {Color = STROKE, Transparency = 0.25}):Play() end
+    end)
+end)
+
+setAutoBatVisual(State.autoBatToggled)
+setAutoSwingVisual(State.autoSwingToggledOn)
+applyMode()
+
+local function addDiscordTag(char)
+    local head = char and char:WaitForChild("Head", 5)
+    if not head then return end
+    local old = head:FindFirstChild("AceDuelsDiscordTag")
+    if old then old:Destroy() end
+    local discordTag = Instance.new("BillboardGui")
+    discordTag.Name = "AceDuelsDiscordTag"
+    discordTag.Size = UDim2.new(0, 220, 0, 45)
+    discordTag.StudsOffset = Vector3.new(0, 3.1, 0)
+    discordTag.Adornee = head
+    discordTag.AlwaysOnTop = true
+    discordTag.Parent = head
+    local txt = Instance.new("TextLabel")
+    txt.Size = UDim2.new(1, 0, 1, 0)
+    txt.BackgroundTransparency = 1
+    txt.Text = DISCORD_TEXT
+    txt.TextColor3 = WHITE
+    txt.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    txt.TextStrokeTransparency = 0.15
+    txt.Font = Enum.Font.GothamBlack
+    txt.TextSize = 14
+    txt.Parent = discordTag
+end
+
+local function setupChar(char)
+    task.wait(0.1)
+    addDiscordTag(char)
+    h = char:WaitForChild("Humanoid", 5)
+    hrp = char:WaitForChild("HumanoidRootPart", 5)
+end
+LP.CharacterAdded:Connect(setupChar)
+if LP.Character then task.spawn(function() setupChar(LP.Character) end) end
+
+local function getBat()
+    local char = LP.Character
+    if not char then return nil end
+    for _, tool in ipairs(char:GetChildren()) do
+        if tool:IsA("Tool") and (tool.Name:lower():find("bat") or tool.Name:lower():find("slap")) then return tool end
+    end
+    local bp = LP:FindFirstChildOfClass("Backpack") or LP:FindFirstChild("Backpack")
+    if bp then
+        for _, tool in ipairs(bp:GetChildren()) do
+            if tool:IsA("Tool") and (tool.Name:lower():find("bat") or tool.Name:lower():find("slap")) then
+                pcall(function() tool.Parent = char end)
+                return tool
+            end
+        end
+    end
+    return nil
+end
+
+local function tryHitBat()
+    if State.hittingCooldown then return end
+    State.hittingCooldown = true
+    pcall(function()
+        local bat = getBat()
+        if bat then
+            bat:Activate()
+            local ev = bat:FindFirstChildWhichIsA("RemoteEvent")
+            if ev then ev:FireServer() end
+        end
+    end)
+    task.delay(0.08, function() State.hittingCooldown = false end)
+end
+
+local function getClosestPlayer()
+    if not hrp then return nil, math.huge end
+    local cp, cd = nil, math.huge
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LP and p.Character then
+            local tr = p.Character:FindFirstChild("HumanoidRootPart")
+            local th = p.Character:FindFirstChildOfClass("Humanoid")
+            if tr and th and th.Health > 0 then
+                local d = (hrp.Position - tr.Position).Magnitude
+                if d < cd then cd = d; cp = p end
+            end
+        end
+    end
+    return cp, cd
+end
+
+RunService.Heartbeat:Connect(function()
+    if not (State.autoBatToggled and h and hrp) then return end
+    local target = getClosestPlayer()
+    if target and target.Character then
+        local tr = target.Character:FindFirstChild("HumanoidRootPart")
+        if tr then
+            if sethiddenproperty then
+                pcall(function() sethiddenproperty(hrp, "PhysicsRepRootPart", tr) end)
+            end
+            local targetPos = tr.Position + Vector3.new(0, 0.9, 0)
+            if (hrp.Position - targetPos).Magnitude > 8 then
+                hrp.CFrame = CFrame.new(targetPos)
+            end
+            local cam = workspace.CurrentCamera
+            if cam then cam.CFrame = CFrame.new(cam.CFrame.Position, tr.Position) end
+            if State.autoSwingToggledOn then tryHitBat() end
+        end
+    end
+end)
+
+UIS.InputBegan:Connect(function(inp, gp)
+    if gp then return end
+    if Keys.autoBatType == "Keyboard" and inp.UserInputType == Enum.UserInputType.Keyboard then
+        if inp.KeyCode == Keys.autoBat then
+            State.autoBatToggled = not State.autoBatToggled
+            setAutoBatVisual(State.autoBatToggled)
+            saveConfig()
+        elseif inp.KeyCode == Keys.guiHide then
+            State.guiVisible = not State.guiVisible
+            main.Visible = State.guiVisible
+        end
+    elseif Keys.autoBatType == "Gamepad" and inp.UserInputType == Enum.UserInputType.Gamepad1 then
+        if inp.KeyCode == Keys.autoBat then
+            State.autoBatToggled = not State.autoBatToggled
+            setAutoBatVisual(State.autoBatToggled)
+            saveConfig()
+        end
+    end
+end)
+
+print("[ACE DUELS AUTO BAT] Loaded - original size kept")
