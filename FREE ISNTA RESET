@@ -1,0 +1,698 @@
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local HttpService = game:GetService("HttpService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+local old = playerGui:FindFirstChild("AceDuelsInstaResetGUI")
+if old then
+	old:Destroy()
+end
+
+local ACCENT = Color3.fromRGB(245, 245, 245)
+local WHITE = Color3.fromRGB(235, 235, 235)
+local GREY = Color3.fromRGB(170, 170, 170)
+local DARK = Color3.fromRGB(8, 8, 8)
+local DARKER = Color3.fromRGB(14, 14, 14)
+
+--// Save Config
+local CONFIG_FILE = "AceDuelsInstaReset_Config.json"
+
+local _ace_isfile = isfile or (syn and syn.isfile) or function(path)
+	local ok, result = pcall(function()
+		return readfile(path)
+	end)
+	return ok and result ~= nil
+end
+
+local _ace_readfile = readfile or (syn and syn.readfile)
+local _ace_writefile = writefile or (syn and syn.writefile)
+
+local canSaveConfig = type(_ace_readfile) == "function" and type(_ace_writefile) == "function"
+
+local savedConfig = {}
+
+local function udim2ToTable(u)
+	return {
+		xs = u.X.Scale,
+		xo = u.X.Offset,
+		ys = u.Y.Scale,
+		yo = u.Y.Offset
+	}
+end
+
+local function tableToUDim2(t, fallback)
+	if type(t) == "table" then
+		return UDim2.new(
+			tonumber(t.xs) or fallback.X.Scale,
+			tonumber(t.xo) or fallback.X.Offset,
+			tonumber(t.ys) or fallback.Y.Scale,
+			tonumber(t.yo) or fallback.Y.Offset
+		)
+	end
+
+	return fallback
+end
+
+local function loadAceConfig()
+	if not canSaveConfig then return end
+	if not _ace_isfile(CONFIG_FILE) then return end
+
+	local ok, data = pcall(function()
+		return HttpService:JSONDecode(_ace_readfile(CONFIG_FILE))
+	end)
+
+	if ok and type(data) == "table" then
+		savedConfig = data
+	end
+end
+
+local function saveAceConfig()
+	if not canSaveConfig then return end
+
+	pcall(function()
+		_ace_writefile(CONFIG_FILE, HttpService:JSONEncode(savedConfig))
+	end)
+end
+
+loadAceConfig()
+
+--// Discord Tag Above Head
+local function createAceDuelsDiscordTag(char)
+	if not char then return end
+	local head = char:FindFirstChild("Head") or char:WaitForChild("Head", 5)
+	if not head then return end
+
+	local oldTag = head:FindFirstChild("AceDuelsDiscordTag")
+	if oldTag then
+		oldTag:Destroy()
+	end
+
+	local discordTag = Instance.new("BillboardGui")
+	discordTag.Name = "AceDuelsDiscordTag"
+	discordTag.Size = UDim2.new(0, 220, 0, 45)
+	discordTag.StudsOffset = Vector3.new(0, 3.05, 0)
+	discordTag.Adornee = head
+	discordTag.AlwaysOnTop = true
+	discordTag.MaxDistance = 250
+	discordTag.Parent = head
+
+	local txt = Instance.new("TextLabel")
+	txt.Name = "TagText"
+	txt.Size = UDim2.new(1, 0, 1, 0)
+	txt.BackgroundTransparency = 1
+	txt.Text = "discord.gg/aceduels"
+	txt.TextColor3 = Color3.fromRGB(255, 255, 255)
+	txt.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+	txt.TextStrokeTransparency = 0.25
+	txt.Font = Enum.Font.GothamBlack
+	txt.TextSize = 15
+	txt.TextScaled = false
+	txt.ZIndex = 10
+	txt.Parent = discordTag
+end
+
+local function setupAceDuelsCharacter(char)
+	task.defer(function()
+		createAceDuelsDiscordTag(char)
+	end)
+end
+
+player.CharacterAdded:Connect(setupAceDuelsCharacter)
+if player.Character then
+	task.spawn(setupAceDuelsCharacter, player.Character)
+end
+
+--// Ace Duels Insta Reset Logic
+_G.AceDuelsResetRemote = _G.AceDuelsResetRemote or nil
+_G.AceDuelsResetGuid = _G.AceDuelsResetGuid or "f888ee6e-c86d-46e1-93d7-0639d6635d42"
+
+pcall(function()
+	if not _G.AceDuelsResetHooked and hookfunction and newcclosure then
+		_G.AceDuelsResetHooked = true
+
+		local oldFire
+		oldFire = hookfunction(Instance.new("RemoteEvent").FireServer, newcclosure(function(self, ...)
+			if not _G.AceDuelsResetRemote
+				and typeof(self) == "Instance"
+				and self:IsA("RemoteEvent")
+				and self.Name:sub(1, 3) == "RE/" then
+				_G.AceDuelsResetRemote = self
+			end
+
+			return oldFire(self, ...)
+		end))
+	end
+end)
+
+local function findAceDuelsResetRemote()
+	if _G.AceDuelsResetRemote then
+		return _G.AceDuelsResetRemote
+	end
+
+	for _, desc in ipairs(ReplicatedStorage:GetDescendants()) do
+		if desc:IsA("RemoteEvent") and desc.Name:sub(1, 3) == "RE/" then
+			_G.AceDuelsResetRemote = desc
+			break
+		end
+	end
+
+	return _G.AceDuelsResetRemote
+end
+
+local function aceDuelsInstaReset()
+	local remote = findAceDuelsResetRemote()
+	if not remote then
+		return false
+	end
+
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+
+	if humanoid and humanoid.Health <= 0 then
+		pcall(function()
+			remote:FireServer(_G.AceDuelsResetGuid, player, "balloon")
+		end)
+		return true
+	end
+
+	local resetDetected = false
+	local resetConns = {}
+
+	if humanoid then
+		table.insert(resetConns, humanoid.Died:Connect(function()
+			resetDetected = true
+		end))
+
+		table.insert(resetConns, humanoid:GetPropertyChangedSignal("Health"):Connect(function()
+			if humanoid.Health <= 0 then
+				resetDetected = true
+			end
+		end))
+	end
+
+	if character then
+		table.insert(resetConns, character.AncestryChanged:Connect(function(_, parent)
+			if not parent then
+				resetDetected = true
+			end
+		end))
+	end
+
+	task.spawn(function()
+		for _ = 1, 10 do
+			if resetDetected then
+				break
+			end
+
+			pcall(function()
+				remote:FireServer(_G.AceDuelsResetGuid, player, "balloon")
+			end)
+
+			task.wait(0.05)
+		end
+
+		for _, conn in ipairs(resetConns) do
+			pcall(function()
+				conn:Disconnect()
+			end)
+		end
+	end)
+
+	return true
+end
+
+_G.AceDuelsInstaReset = aceDuelsInstaReset
+
+
+--// Auto Reset On Med Fling Logic
+_G.AceDuelsAutoResetOnMedFling = _G.AceDuelsAutoResetOnMedFling or {
+	conns = {},
+	enabled = savedConfig.autoResetOnMedFling == true,
+	medTriggered = false,
+	lastFire = 0,
+	cooldown = 2.25,
+	charAddedConn = nil
+}
+
+local function stopAutoResetOnMedFling()
+	local state = _G.AceDuelsAutoResetOnMedFling
+	for _, conn in ipairs(state.conns or {}) do
+		pcall(function()
+			conn:Disconnect()
+		end)
+	end
+	state.conns = {}
+	state.medTriggered = false
+end
+
+local function shouldAutoResetOnMedFling(part)
+	local state = _G.AceDuelsAutoResetOnMedFling
+	if not state or not state.enabled then return false end
+	if state.medTriggered then return false end
+	if tick() - (state.lastFire or 0) < (state.cooldown or 2.25) then return false end
+	if not part or not part.Parent then return false end
+	if part:FindFirstAncestorOfClass("Tool") or part:FindFirstAncestorOfClass("Accessory") then return false end
+	return part.Anchored == true and part.Transparency == 1
+end
+
+local function fireAutoResetOnMedFling(part)
+	if not shouldAutoResetOnMedFling(part) then return end
+	local state = _G.AceDuelsAutoResetOnMedFling
+	state.medTriggered = true
+	state.lastFire = tick()
+
+	task.delay(2.3, function()
+		if state.enabled then
+			aceDuelsInstaReset()
+		end
+	end)
+end
+
+local function startAutoResetOnMedFling(char)
+	local state = _G.AceDuelsAutoResetOnMedFling
+	stopAutoResetOnMedFling()
+	state.medTriggered = false
+	char = char or player.Character
+	if not char then return end
+
+	for _, part in ipairs(char:GetDescendants()) do
+		if part:IsA("BasePart") then
+			table.insert(state.conns, part:GetPropertyChangedSignal("Anchored"):Connect(function()
+				fireAutoResetOnMedFling(part)
+			end))
+			fireAutoResetOnMedFling(part)
+		end
+	end
+
+	table.insert(state.conns, char.DescendantAdded:Connect(function(part)
+		if part:IsA("BasePart") then
+			table.insert(state.conns, part:GetPropertyChangedSignal("Anchored"):Connect(function()
+				fireAutoResetOnMedFling(part)
+			end))
+			fireAutoResetOnMedFling(part)
+		end
+	end))
+
+	table.insert(state.conns, char.AncestryChanged:Connect(function(_, parent)
+		if not parent then
+			state.medTriggered = false
+		end
+	end))
+end
+
+local setAutoMedVisual
+local function setAutoResetOnMedFling(on)
+	local state = _G.AceDuelsAutoResetOnMedFling
+	state.enabled = on == true
+	savedConfig.autoResetOnMedFling = state.enabled
+
+	if state.enabled then
+		startAutoResetOnMedFling(player.Character)
+	else
+		stopAutoResetOnMedFling()
+	end
+
+	if setAutoMedVisual then
+		setAutoMedVisual(state.enabled)
+	end
+
+	saveAceConfig()
+end
+
+if not _G.AceDuelsAutoResetOnMedFling.charAddedConn then
+	_G.AceDuelsAutoResetOnMedFling.charAddedConn = player.CharacterAdded:Connect(function(char)
+		task.wait(0.25)
+		if _G.AceDuelsAutoResetOnMedFling.enabled then
+			startAutoResetOnMedFling(char)
+		end
+	end)
+end
+
+--// GUI
+local gui = Instance.new("ScreenGui")
+gui.Name = "AceDuelsInstaResetGUI"
+gui.ResetOnSpawn = false
+gui.DisplayOrder = 999
+gui.IgnoreGuiInset = true
+gui.Parent = playerGui
+
+local isMobileMode = savedConfig.mobileMode == true
+
+local function makeCorner(parent, radius)
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, radius)
+	c.Parent = parent
+	return c
+end
+
+local function makeStroke(parent, color, thickness, transparency)
+	local s = Instance.new("UIStroke")
+	s.Color = color
+	s.Thickness = thickness
+	s.Transparency = transparency or 0
+	s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	s.Parent = parent
+	return s
+end
+
+local main = Instance.new("Frame")
+main.Name = "Main"
+main.Size = UDim2.new(0, 300, 0, 190)
+main.Position = tableToUDim2(savedConfig.mainPosition, UDim2.new(0.5, -150, 0.5, -95))
+main.BackgroundColor3 = DARK
+main.BackgroundTransparency = 0.08
+main.BorderSizePixel = 0
+main.Active = true
+main.Draggable = true
+main.ClipsDescendants = true
+main.Parent = gui
+
+makeCorner(main, 12)
+makeStroke(main, ACCENT, 1, 0.55)
+
+local bg = Instance.new("ImageLabel")
+bg.Name = "Photo"
+bg.Size = UDim2.new(1, 0, 1, 0)
+bg.Position = UDim2.new(0, 0, 0, 0)
+bg.BackgroundTransparency = 1
+bg.Image = "rbxassetid://97328899571608"
+bg.ScaleType = Enum.ScaleType.Crop
+bg.ImageTransparency = 0
+bg.ZIndex = 1
+bg.Parent = main
+makeCorner(bg, 12)
+
+local photoTint = Instance.new("Frame")
+photoTint.Name = "PhotoTint"
+photoTint.Size = UDim2.new(1, 0, 1, 0)
+photoTint.Position = UDim2.new(0, 0, 0, 0)
+photoTint.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+photoTint.BackgroundTransparency = 0.80
+photoTint.BorderSizePixel = 0
+photoTint.ZIndex = 2
+photoTint.Parent = main
+makeCorner(photoTint, 12)
+
+local darkFilm = Instance.new("Frame")
+darkFilm.Name = "DarkFilm"
+darkFilm.Size = UDim2.new(1, 0, 1, 0)
+darkFilm.Position = UDim2.new(0, 0, 0, 0)
+darkFilm.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+darkFilm.BackgroundTransparency = 0.50
+darkFilm.BorderSizePixel = 0
+darkFilm.ZIndex = 3
+darkFilm.Parent = main
+makeCorner(darkFilm, 12)
+
+local title = Instance.new("TextLabel")
+title.Name = "Title"
+title.Size = UDim2.new(0, 145, 0, 24)
+title.Position = UDim2.new(1, -157, 0, 13)
+title.BackgroundTransparency = 1
+title.Text = "ACE DUELS"
+title.TextColor3 = WHITE
+title.Font = Enum.Font.GothamBlack
+title.TextSize = 15
+title.TextXAlignment = Enum.TextXAlignment.Right
+title.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+title.TextStrokeTransparency = 0.42
+title.TextTransparency = 0.05
+title.ZIndex = 11
+title.Parent = main
+
+local subtitle = Instance.new("TextLabel")
+subtitle.Name = "Subtitle"
+subtitle.Size = UDim2.new(0, 145, 0, 12)
+subtitle.Position = UDim2.new(1, -157, 0, 38)
+subtitle.BackgroundTransparency = 1
+subtitle.Text = "INSTA RESET"
+subtitle.TextColor3 = WHITE
+subtitle.Font = Enum.Font.GothamBold
+subtitle.TextSize = 8
+subtitle.TextXAlignment = Enum.TextXAlignment.Right
+subtitle.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+subtitle.TextStrokeTransparency = 0.7
+subtitle.TextTransparency = 0.12
+subtitle.ZIndex = 11
+subtitle.Parent = main
+
+local modeButton = Instance.new("TextButton")
+modeButton.Name = "ModeButton"
+modeButton.Size = UDim2.new(0, 66, 0, 28)
+modeButton.Position = UDim2.new(0, 12, 0, 13)
+modeButton.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+modeButton.BackgroundTransparency = 0.58
+modeButton.BorderSizePixel = 0
+modeButton.AutoButtonColor = false
+modeButton.Text = "PC"
+modeButton.TextColor3 = WHITE
+modeButton.Font = Enum.Font.GothamBlack
+modeButton.TextSize = 10
+modeButton.TextTransparency = 0.04
+modeButton.ZIndex = 12
+modeButton.Parent = main
+
+makeCorner(modeButton, 8)
+makeStroke(modeButton, ACCENT, 0.8, 0.82)
+
+local keyCard = Instance.new("Frame")
+keyCard.Name = "KeybindCard"
+keyCard.Size = UDim2.new(1, -24, 0, 58)
+keyCard.Position = UDim2.new(0, 12, 0, 68)
+keyCard.BackgroundColor3 = DARKER
+keyCard.BackgroundTransparency = 0.58
+keyCard.BorderSizePixel = 0
+keyCard.ZIndex = 10
+keyCard.Parent = main
+
+makeCorner(keyCard, 10)
+makeStroke(keyCard, ACCENT, 0.8, 0.82)
+
+local keyTitle = Instance.new("TextLabel")
+keyTitle.Name = "KeyTitle"
+keyTitle.Size = UDim2.new(0, 100, 0, 16)
+keyTitle.Position = UDim2.new(0, 14, 0, 18)
+keyTitle.BackgroundTransparency = 1
+keyTitle.Text = "KEYBIND"
+keyTitle.TextColor3 = WHITE
+keyTitle.Font = Enum.Font.GothamBlack
+keyTitle.TextSize = 11
+keyTitle.TextXAlignment = Enum.TextXAlignment.Left
+keyTitle.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+keyTitle.TextStrokeTransparency = 0.82
+keyTitle.TextTransparency = 0.08
+keyTitle.ZIndex = 11
+keyTitle.Parent = keyCard
+
+local rButton = Instance.new("TextButton")
+rButton.Name = "RButton"
+rButton.Size = UDim2.new(0, 68, 0, 28)
+rButton.Position = UDim2.new(1, -82, 0.5, -14)
+rButton.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+rButton.BackgroundTransparency = 0.58
+rButton.BorderSizePixel = 0
+rButton.AutoButtonColor = false
+rButton.Text = "R"
+rButton.TextColor3 = WHITE
+rButton.Font = Enum.Font.GothamBlack
+rButton.TextSize = 14
+rButton.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+rButton.TextStrokeTransparency = 0.56
+rButton.TextTransparency = 0.04
+rButton.ZIndex = 12
+rButton.Parent = keyCard
+
+makeCorner(rButton, 7)
+makeStroke(rButton, ACCENT, 0.7, 0.88)
+
+local tapCard = Instance.new("TextButton")
+tapCard.Name = "TapToReset"
+tapCard.Size = UDim2.new(1, -24, 0, 52)
+tapCard.Position = UDim2.new(0, 12, 0, 68)
+tapCard.BackgroundColor3 = DARKER
+tapCard.BackgroundTransparency = 0.58
+tapCard.BorderSizePixel = 0
+tapCard.AutoButtonColor = false
+tapCard.Text = "TAP TO RESET"
+tapCard.TextColor3 = WHITE
+tapCard.Font = Enum.Font.GothamBlack
+tapCard.TextSize = 12
+tapCard.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+tapCard.TextStrokeTransparency = 0.58
+tapCard.TextTransparency = 0.04
+tapCard.ZIndex = 13
+tapCard.Visible = false
+tapCard.Parent = main
+
+makeCorner(tapCard, 9)
+makeStroke(tapCard, ACCENT, 0.8, 0.84)
+
+
+local autoMedButton = Instance.new("TextButton")
+autoMedButton.Name = "AutoResetOnMedFling"
+autoMedButton.Size = UDim2.new(1, -24, 0, 32)
+autoMedButton.Position = UDim2.new(0, 12, 0, 137)
+autoMedButton.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+autoMedButton.BackgroundTransparency = 0.62
+autoMedButton.BorderSizePixel = 0
+autoMedButton.AutoButtonColor = false
+autoMedButton.Text = "AUTO RESET ON MED FLING"
+autoMedButton.TextColor3 = WHITE
+autoMedButton.Font = Enum.Font.GothamBlack
+autoMedButton.TextSize = 11
+autoMedButton.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+autoMedButton.TextStrokeTransparency = 0.50
+autoMedButton.TextTransparency = 0.04
+autoMedButton.ZIndex = 13
+autoMedButton.Parent = main
+
+makeCorner(autoMedButton, 9)
+local autoMedStroke = makeStroke(autoMedButton, ACCENT, 0.9, 0.84)
+
+setAutoMedVisual = function(on)
+	autoMedButton.Text = "AUTO RESET ON MED FLING"
+	autoMedButton.BackgroundTransparency = 0.62
+	autoMedButton.TextTransparency = 0.04
+
+	if on then
+		autoMedStroke.Transparency = 0.05
+		autoMedStroke.Thickness = 1.25
+	else
+		autoMedStroke.Transparency = 0.84
+		autoMedStroke.Thickness = 0.9
+	end
+end
+
+local footer = Instance.new("TextLabel")
+footer.Name = "Footer"
+footer.Size = UDim2.new(1, -20, 0, 18)
+footer.Position = UDim2.new(0, 10, 1, -23)
+footer.BackgroundTransparency = 1
+footer.Text = "discord.gg/aceduels"
+footer.TextColor3 = Color3.fromRGB(225, 225, 225)
+footer.Font = Enum.Font.GothamBold
+footer.TextSize = 10
+footer.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+footer.TextStrokeTransparency = 0.55
+footer.TextTransparency = 0.04
+footer.TextXAlignment = Enum.TextXAlignment.Center
+footer.ZIndex = 11
+footer.Parent = main
+
+local savePosDebounce = false
+
+main:GetPropertyChangedSignal("Position"):Connect(function()
+	savedConfig.mainPosition = udim2ToTable(main.Position)
+
+	if savePosDebounce then return end
+	savePosDebounce = true
+
+	task.delay(0.25, function()
+		savePosDebounce = false
+		saveAceConfig()
+	end)
+end)
+
+local function setMode(mobile)
+	isMobileMode = mobile
+
+	if mobile then
+		-- Mobile stays compact; only PC gets the bigger layout.
+		main.Size = UDim2.new(0, 220, 0, 150)
+		modeButton.Text = "MOB"
+		modeButton.Size = UDim2.new(0, 58, 0, 26)
+		title.Size = UDim2.new(0, 120, 0, 20)
+		title.Position = UDim2.new(1, -130, 0, 12)
+		title.TextSize = 12
+		subtitle.Size = UDim2.new(0, 120, 0, 10)
+		subtitle.Position = UDim2.new(1, -130, 0, 32)
+		subtitle.TextSize = 6
+		keyCard.Visible = false
+		tapCard.Visible = true
+		tapCard.Size = UDim2.new(1, -24, 0, 42)
+		tapCard.Position = UDim2.new(0, 12, 0, 55)
+		tapCard.TextSize = 10
+		autoMedButton.Size = UDim2.new(1, -24, 0, 27)
+		autoMedButton.Position = UDim2.new(0, 12, 0, 104)
+		autoMedButton.TextSize = 8
+		footer.TextSize = 8
+		footer.Position = UDim2.new(0, 10, 1, -20)
+	else
+		main.Size = UDim2.new(0, 300, 0, 190)
+		modeButton.Text = "PC"
+		modeButton.Size = UDim2.new(0, 66, 0, 28)
+		title.Size = UDim2.new(0, 145, 0, 24)
+		title.Position = UDim2.new(1, -157, 0, 13)
+		title.TextSize = 15
+		subtitle.Size = UDim2.new(0, 145, 0, 12)
+		subtitle.Position = UDim2.new(1, -157, 0, 38)
+		subtitle.TextSize = 8
+		keyCard.Visible = true
+		tapCard.Visible = false
+		tapCard.Size = UDim2.new(1, -24, 0, 52)
+		tapCard.Position = UDim2.new(0, 12, 0, 68)
+		tapCard.TextSize = 12
+		autoMedButton.Size = UDim2.new(1, -24, 0, 32)
+		autoMedButton.Position = UDim2.new(0, 12, 0, 137)
+		autoMedButton.TextSize = 11
+		footer.TextSize = 10
+		footer.Position = UDim2.new(0, 10, 1, -23)
+	end
+
+	savedConfig.mobileMode = isMobileMode
+	savedConfig.mainPosition = udim2ToTable(main.Position)
+	saveAceConfig()
+end
+
+local resetDebounce = false
+
+local function pressEffect()
+	if resetDebounce then return end
+	resetDebounce = true
+
+	aceDuelsInstaReset()
+
+	rButton.BackgroundTransparency = 0.40
+	tapCard.BackgroundTransparency = 0.40
+
+	task.delay(0.35, function()
+		if rButton then
+			rButton.BackgroundTransparency = 0.58
+		end
+
+		if tapCard then
+			tapCard.BackgroundTransparency = 0.58
+		end
+
+		resetDebounce = false
+	end)
+end
+
+modeButton.MouseButton1Click:Connect(function()
+	setMode(not isMobileMode)
+end)
+
+rButton.MouseButton1Click:Connect(pressEffect)
+tapCard.MouseButton1Click:Connect(pressEffect)
+autoMedButton.MouseButton1Click:Connect(function()
+	setAutoResetOnMedFling(not _G.AceDuelsAutoResetOnMedFling.enabled)
+end)
+
+setAutoMedVisual(_G.AceDuelsAutoResetOnMedFling.enabled)
+if _G.AceDuelsAutoResetOnMedFling.enabled then
+	startAutoResetOnMedFling(player.Character)
+end
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	if UserInputService:GetFocusedTextBox() then return end
+
+	if input.KeyCode == Enum.KeyCode.R and not isMobileMode then
+		pressEffect()
+	end
+end)
+
+setMode(isMobileMode)
