@@ -1,3 +1,4 @@
+-- Fixed copy: reduced top-level local declarations to avoid Lua register limit errors.
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
@@ -112,7 +113,7 @@ local fovEnabled = false
 local fovValue = 70
 local noCamCollisionEnabled = false
 _G.AceNoPlayerCollisionEnabled = _G.AceNoPlayerCollisionEnabled or false
-_G.AceBodyLock = _G.AceBodyLock or {enabled=false, radius=60, conn=nil, target=nil}
+_G.AceBodyLock = _G.AceBodyLock or {enabled=false, radius=15, conn=nil, target=nil}
 local customFontVisualEnabled = false
 local skyTheme = "Off"
 local setPlayerESPVisual = nil
@@ -1010,7 +1011,7 @@ _G.AceAntiDesyncAimbotOn = data.antiDesyncAimbotEnabled == true
 batCounterEnabled = data.batCounterEnabled == true
 medCounterEnabled = data.medCounterEnabled == true
 _G.AceBodyLock.enabled = data.bodyLockEnabled == true
-_G.AceBodyLock.radius = math.clamp(tonumber(data.bodyLockRadius) or 60, 1, 500)
+_G.AceBodyLock.radius = math.clamp(tonumber(data.bodyLockRadius) or 15, 1, 500)
 antiKickEnabled = data.safeMode == true
 autoResetOnMedEnabled = data.autoResetOnMedEnabled == true
 espEnabled = data.espEnabled == true
@@ -1537,46 +1538,56 @@ _G.AceClearBatCounterConns()
 _G.AceStopBatCounterFaceLock(true)
 _G.AceBatCounterState.attacking = false
 end
-_G.AceBodyLock = _G.AceBodyLock or {enabled=false, radius=60, conn=nil, target=nil}
+_G.AceBodyLock = _G.AceBodyLock or {enabled=false, radius=15, conn=nil, target=nil}
 function _G.AceGetBodyLockTarget()
 local root = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
 if not root then return nil end
-local closest, minimumDistance = nil, math.huge
-local radius = math.clamp(tonumber(_G.AceBodyLock.radius) or 60, 1, 500)
+local closestPlayerRoot = nil
+local closestDistance = math.clamp(tonumber(_G.AceBodyLock.radius) or 15, 1, 500)
 for _, player in ipairs(Players:GetPlayers()) do
 if player ~= LP and player.Character then
 local targetRoot = player.Character:FindFirstChild("HumanoidRootPart")
 local targetHumanoid = player.Character:FindFirstChildOfClass("Humanoid")
 if targetRoot and targetHumanoid and targetHumanoid.Health > 0 then
-local distance = (targetRoot.Position - root.Position).Magnitude
-if distance <= radius and distance < minimumDistance then closest, minimumDistance = targetRoot, distance end
+local distance = (root.Position - targetRoot.Position).Magnitude
+if distance <= closestDistance then
+closestDistance = distance
+closestPlayerRoot = targetRoot
 end
 end
 end
-return closest
+end
+return closestPlayerRoot
 end
 function _G.AceStartBodyLock()
 if _G.AceBodyLock.conn then _G.AceBodyLock.conn:Disconnect() end
 _G.AceBodyLock.enabled = true
-local humanoid = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
-if humanoid then humanoid.AutoRotate = false end
 _G.AceBodyLock.conn = RunService.RenderStepped:Connect(function()
 if not _G.AceBodyLock.enabled then return end
 local character = LP.Character
 local root = character and character:FindFirstChild("HumanoidRootPart")
 local hum = character and character:FindFirstChildOfClass("Humanoid")
-if not root or not hum or hum.Health <= 0 or hum.FloorMaterial == Enum.Material.Air then return end
-hum.AutoRotate = false
+if not root or not hum then return end
 local target = _G.AceGetBodyLockTarget()
 _G.AceBodyLock.target = target
-if not target then root.AssemblyAngularVelocity = Vector3.zero; return end
-local velocity = target.AssemblyLinearVelocity
-local predictionTime = math.clamp(velocity.Magnitude / 150, 0.05, 0.2)
-local predictedPosition = target.Position + velocity * predictionTime
-local goal = CFrame.lookAt(root.Position, Vector3.new(predictedPosition.X, root.Position.Y, predictedPosition.Z))
-local _, yaw = (root.CFrame:Inverse() * goal):ToEulerAnglesXYZ()
-yaw = math.clamp(yaw, -2.5, 2.5)
-root.AssemblyAngularVelocity = root.CFrame:VectorToWorldSpace(Vector3.new(0, yaw * 42, 0))
+if target then
+hum.AutoRotate = false
+local myPos = root.Position
+local targetPos = target.Position
+local lookPos = Vector3.new(targetPos.X, myPos.Y, targetPos.Z)
+local toLook = lookPos - myPos
+if toLook.Magnitude > 0.1 then
+local goalCF = CFrame.lookAt(myPos, lookPos)
+local curCF = root.CFrame
+local diffCF = curCF:Inverse() * goalCF
+local _, ry, _ = diffCF:ToEulerAnglesXYZ()
+local turnSpeed = 150
+root.AssemblyAngularVelocity = root.CFrame:VectorToWorldSpace(Vector3.new(0, ry * turnSpeed, 0))
+end
+else
+hum.AutoRotate = true
+root.AssemblyAngularVelocity = Vector3.zero
+end
 end)
 end
 function _G.AceStopBodyLock()
@@ -3450,13 +3461,13 @@ textDim = Color3.fromRGB(180, 180, 190),
 toggleBg = Color3.fromRGB(18, 18, 26),
 knob = Color3.fromRGB(238, 238, 245),
 }
-local function corner(parent, radius)
+function corner(parent, radius)
 local c = Instance.new("UICorner")
 c.CornerRadius = UDim.new(0, radius or 8)
 c.Parent = parent
 return c
 end
-local function stroke(parent, color, thickness, transparency)
+function stroke(parent, color, thickness, transparency)
 local s = Instance.new("UIStroke")
 s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 s.Color = color or COLORS.stroke
@@ -3477,10 +3488,10 @@ NumberSequenceKeypoint.new(1, 0.55),
 g.Parent = s
 return s
 end
-local function tween(obj, props, time)
+function tween(obj, props, time)
 TweenService:Create(obj, TweenInfo.new(time or 0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props):Play()
 end
-local function makeDraggable(frame)
+function makeDraggable(frame)
 local dragging = false
 local dragStart
 local startPos
@@ -3516,13 +3527,13 @@ startPos.Y.Offset + delta.Y
 end
 end)
 end
-local Gui = Instance.new("ScreenGui")
+Gui = Instance.new("ScreenGui")
 Gui.Name = "AceDuelsAdaptReconstruct"
 Gui.ResetOnSpawn = false
 Gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 Gui.Parent = PlayerGui
-local FULL_MAIN_SIZE = UDim2.new(0, 356, 0, 536)
-local Main = Instance.new("Frame")
+FULL_MAIN_SIZE = UDim2.new(0, 356, 0, 536)
+Main = Instance.new("Frame")
 Main.Name = "Main"
 Main.AnchorPoint = Vector2.new(0, 0.5)
 Main.Size = FULL_MAIN_SIZE
@@ -3539,11 +3550,11 @@ makeDraggable(Main)
 Main:GetPropertyChangedSignal("Position"):Connect(function()
 savedMainPositionTable = udim2ToTable(Main.Position)
 end)
-local MiniFrame = Instance.new("Frame")
+MiniFrame = Instance.new("Frame")
 MiniFrame.Name = "MiniFrame"
 MiniFrame.AnchorPoint = Vector2.new(0, 0)
 MiniFrame.Size = UDim2.new(0, 78, 0, 28)
-local MINI_DEFAULT_POSITION = UDim2.new(0, 132, 0, 112)
+MINI_DEFAULT_POSITION = UDim2.new(0, 132, 0, 112)
 MiniFrame.Position = MINI_DEFAULT_POSITION
 savedMiniPositionTable = nil
 MiniFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
@@ -3555,7 +3566,7 @@ MiniFrame.ZIndex = 20
 MiniFrame.Parent = Gui
 corner(MiniFrame, 8)
 stroke(MiniFrame, Color3.fromRGB(120, 120, 130), 1, 0.22)
-local MiniButton = Instance.new("TextButton")
+MiniButton = Instance.new("TextButton")
 MiniButton.Name = "MiniButton"
 MiniButton.Size = UDim2.new(1, 0, 1, 0)
 MiniButton.BackgroundTransparency = 1
@@ -3568,7 +3579,7 @@ MiniButton.Font = Enum.Font.GothamBlack
 MiniButton.AutoButtonColor = false
 MiniButton.ZIndex = 21
 MiniButton.Parent = MiniFrame
-local MiniShade = Instance.new("Frame")
+MiniShade = Instance.new("Frame")
 MiniShade.Name = "MiniShade"
 MiniShade.Size = UDim2.new(1, -4, 1, -4)
 MiniShade.Position = UDim2.new(0, 2, 0, 2)
@@ -3625,14 +3636,14 @@ Main.Size = FULL_MAIN_SIZE
 savedMainPositionTable = udim2ToTable(Main.Position)
 end)
 end
-local BackgroundIDs = {
+BackgroundIDs = {
 "99416158073201",
 "126860692354524",
 "73226092831324",
 "90280869222992",
 }
 currentBackground = tonumber(savedConfig.currentBackground) or currentBackground
-local BgImage = Instance.new("ImageLabel")
+BgImage = Instance.new("ImageLabel")
 BgImage.Name = "CustomBackground"
 BgImage.BackgroundTransparency = 1
 BgImage.ImageTransparency = 0
@@ -3643,7 +3654,7 @@ BgImage.Visible = false
 BgImage.ZIndex = 1
 BgImage.Parent = Main
 corner(BgImage, 14)
-local function applyBackground(index)
+function applyBackground(index)
 currentBackground = index or 0
 if currentBackground == 0 then
 Main.BackgroundColor3 = COLORS.bg
@@ -3664,7 +3675,7 @@ saveAceConfig()
 return "None"
 end
 applyBackground(currentBackground)
-local LogoIcon = Instance.new("ImageLabel")
+LogoIcon = Instance.new("ImageLabel")
 LogoIcon.Name = "LogoIcon"
 LogoIcon.BackgroundColor3 = Color3.fromRGB(7, 7, 10)
 LogoIcon.BackgroundTransparency = 0.12
@@ -3677,7 +3688,7 @@ LogoIcon.ZIndex = 6
 LogoIcon.Parent = Main
 corner(LogoIcon, 12)
 stroke(LogoIcon, COLORS.strokeSoft, 1, 0.35)
-local Title = Instance.new("TextLabel")
+Title = Instance.new("TextLabel")
 Title.Name = "Title"
 Title.BackgroundTransparency = 1
 Title.Size = UDim2.new(1, -118, 0, 30)
@@ -3691,7 +3702,7 @@ Title.TextSize = 27
 Title.TextXAlignment = Enum.TextXAlignment.Left
 Title.ZIndex = 6
 Title.Parent = Main
-local Discord = Instance.new("TextLabel")
+Discord = Instance.new("TextLabel")
 Discord.Name = "Discord"
 Discord.BackgroundTransparency = 1
 Discord.Size = UDim2.new(1, -118, 0, 18)
@@ -3705,7 +3716,7 @@ Discord.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
 Discord.TextStrokeTransparency = 0.25
 Discord.ZIndex = 6
 Discord.Parent = Main
-local HeaderDivider = Instance.new("Frame")
+HeaderDivider = Instance.new("Frame")
 HeaderDivider.Name = "HeaderDivider"
 HeaderDivider.BackgroundColor3 = Color3.fromRGB(70, 70, 82)
 HeaderDivider.BackgroundTransparency = 0.45
@@ -3714,7 +3725,7 @@ HeaderDivider.Size = UDim2.new(1, -34, 0, 1)
 HeaderDivider.Position = UDim2.new(0, 17, 0, 96)
 HeaderDivider.ZIndex = 6
 HeaderDivider.Parent = Main
-local Close = Instance.new("TextButton")
+Close = Instance.new("TextButton")
 Close.Name = "Close"
 Close.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 Close.BackgroundTransparency = 0.28
@@ -3761,31 +3772,31 @@ AceUpdateGuiLockVisual()
 saveAceConfig()
 end)
 AceUpdateGuiLockVisual()
-local Content = Instance.new("Frame")
+Content = Instance.new("Frame")
 Content.Name = "Content"
 Content.BackgroundTransparency = 1
 Content.Position = UDim2.new(0, 13, 0, 145)
 Content.Size = UDim2.new(1, -26, 1, -157)
 Content.ZIndex = 3
 Content.Parent = Main
-local Tabs = Instance.new("Frame")
+Tabs = Instance.new("Frame")
 Tabs.Name = "Tabs"
 Tabs.BackgroundTransparency = 1
 Tabs.Position = UDim2.new(0, 12, 0, 103)
 Tabs.Size = UDim2.new(1, -24, 0, 34)
 Tabs.ZIndex = 3
 Tabs.Parent = Main
-local TabLayout = Instance.new("UIListLayout")
+TabLayout = Instance.new("UIListLayout")
 TabLayout.FillDirection = Enum.FillDirection.Horizontal
 TabLayout.Padding = UDim.new(0, 5)
 TabLayout.SortOrder = Enum.SortOrder.LayoutOrder
 TabLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 TabLayout.Parent = Tabs
-local pages = {}
-local tabButtons = {}
-local tabNames = {"MOVEMENT", "COMBAT", "KEYBINDS", "VISUALS", "SETTINGS"}
-local activeTab = "MOVEMENT"
-local function addPage(name)
+pages = {}
+tabButtons = {}
+tabNames = {"MOVEMENT", "COMBAT", "KEYBINDS", "VISUALS", "SETTINGS"}
+activeTab = "MOVEMENT"
+function addPage(name)
 local page = Instance.new("ScrollingFrame")
 page.Name = name
 page.BackgroundTransparency = 1
@@ -3805,7 +3816,7 @@ layout.Parent = page
 pages[name] = page
 return page
 end
-local function setTab(name)
+function setTab(name)
 activeTab = name
 for pageName, page in pairs(pages) do
 page.Visible = pageName == name
@@ -3845,7 +3856,7 @@ btn.MouseButton1Click:Connect(function()
 setTab(name)
 end)
 end
-local function section(parent, text, order)
+function section(parent, text, order)
 local label = Instance.new("TextLabel")
 label.Name = text
 label.BackgroundTransparency = 1
@@ -3862,7 +3873,7 @@ label.ZIndex = 8
 label.Parent = parent
 return label
 end
-local function baseRow(parent, labelText, order)
+function baseRow(parent, labelText, order)
 local row = Instance.new("Frame")
 row.Name = labelText
 row.BackgroundColor3 = COLORS.row
@@ -3896,7 +3907,7 @@ tween(row, {BackgroundTransparency = 0.3})
 end)
 return row
 end
-local function textboxRow(parent, labelText, value, order)
+function textboxRow(parent, labelText, value, order)
 local row = baseRow(parent, labelText, order)
 local box = Instance.new("TextBox")
 box.Name = "ValueBox"
@@ -3916,7 +3927,7 @@ corner(box, 7)
 stroke(box, COLORS.strokeSoft, 1, 0.45)
 return row, box
 end
-local function toggleRow(parent, labelText, default, order)
+function toggleRow(parent, labelText, default, order)
 local row = baseRow(parent, labelText, order)
 local button = Instance.new("TextButton")
 button.Name = "ToggleButton"
@@ -4065,7 +4076,7 @@ end
 setVisual(default)
 return row, setVisual, button
 end
-local function dropdownRow(parent, labelText, value, order)
+function dropdownRow(parent, labelText, value, order)
 local row = baseRow(parent, labelText, order)
 local select = Instance.new("TextButton")
 select.Name = "Dropdown"
@@ -4084,13 +4095,13 @@ corner(select, 7)
 stroke(select, COLORS.strokeSoft, 1, 0.45)
 return row, select
 end
-local animationPackValueLabel = nil
-local function refreshAnimationPackRow()
+animationPackValueLabel = nil
+function refreshAnimationPackRow()
 if animationPackValueLabel then
 animationPackValueLabel.Text = selectedAnimationPack
 end
 end
-local function animationPackRow(parent, order)
+function animationPackRow(parent, order)
 local row = baseRow(parent, "Animation Pack", order)
 row.Size = UDim2.new(1, -4, 0, 42)
 local label = row:FindFirstChild("Label")
@@ -4160,14 +4171,14 @@ setPackIndex(AnimationPackIndex + 1)
 end)
 return row
 end
-local function keyName(key)
+function keyName(key)
 if not key then return "None" end
 local name = tostring(key):gsub("Enum.KeyCode.", "")
 name = name:gsub("Button", "BTN ")
 name = name:gsub("DPad", "DPad ")
 return name
 end
-local function refreshSpeedKeybindButton(keyId)
+function refreshSpeedKeybindButton(keyId)
 local btn = speedKeybindButtons[keyId]
 if btn then
 if listeningForSpeedKey == keyId then
@@ -4177,17 +4188,17 @@ btn.Text = keyName(speedKeybinds[keyId])
 end
 end
 end
-local function refreshAllSpeedKeybinds()
+function refreshAllSpeedKeybinds()
 for keyId in pairs(speedKeybindButtons) do
 refreshSpeedKeybindButton(keyId)
 end
 end
-local function refreshTPDownKeybind()
+function refreshTPDownKeybind()
 if tpDownKeybindButton then
 tpDownKeybindButton.Text = listeningForTPDownKey and "Press..." or keyName(tpDownKeybind)
 end
 end
-local function tpDownKeybindRow(parent, order)
+function tpDownKeybindRow(parent, order)
 local row = baseRow(parent, "TP Down", order)
 local btn = Instance.new("TextButton")
 btn.Name = "TPDownKeybindButton"
@@ -4240,7 +4251,7 @@ saveAceConfig()
 end)
 return row, btn
 end
-local function speedKeybindRow(parent, labelText, keyId, order)
+function speedKeybindRow(parent, labelText, keyId, order)
 local row = baseRow(parent, labelText, order)
 local btn = Instance.new("TextButton")
 btn.Name = "KeybindButton"
@@ -4293,24 +4304,24 @@ saveAceConfig()
 end)
 return row, btn
 end
-local normalModeValueLabel = nil
-local laggerModeValueLabel = nil
-local aimbotButtonLabel = nil
-local aimbotSpeedLabel = nil
-local laggerAimbotSpeedLabel = nil
-local combatAimbotKeybindLabel = nil
-local function getAimbotModeDisplay()
+normalModeValueLabel = nil
+laggerModeValueLabel = nil
+aimbotButtonLabel = nil
+aimbotSpeedLabel = nil
+laggerAimbotSpeedLabel = nil
+combatAimbotKeybindLabel = nil
+function getAimbotModeDisplay()
 if selectedAimbotMode == "Anti Bypass" or selectedAimbotMode == "Bypass" then
 return "Anti Bypass"
 end
 return "Normal"
 end
-local function refreshAimbotButtonLabel()
+function refreshAimbotButtonLabel()
 if aimbotButtonLabel then
 aimbotButtonLabel.Text = getAimbotModeDisplay() .. " Aimbot"
 end
 end
-local function refreshAimbotModeLabels()
+function refreshAimbotModeLabels()
 local modeName = getAimbotModeDisplay()
 if aimbotSpeedLabel then
 aimbotSpeedLabel.Text = modeName .. " Aimbot Speed"
@@ -4331,7 +4342,7 @@ if laggerModeValueLabel then
 laggerModeValueLabel.Text = (currentSpeedMode == "Lagger Carry") and "Lagger Carry" or "Lagger"
 end
 end
-local function modeDisplayRow(parent, order, side)
+function modeDisplayRow(parent, order, side)
 local row = baseRow(parent, "Mode", order)
 row.Size = UDim2.new(1, -4, 0, 42)
 row.BackgroundTransparency = 0.42
@@ -4380,7 +4391,7 @@ end
 refreshSpeedModeRows()
 return row, value
 end
-local function aimbotModeButtonRow(parent, order)
+function aimbotModeButtonRow(parent, order)
 local row, setVisual = toggleRow(parent, tostring(selectedAimbotMode) .. " Aimbot", false, order)
 aimbotButtonLabel = row and row:FindFirstChild("Label")
 _G.AceAimbotSetVisual = setVisual
@@ -4394,7 +4405,7 @@ end)
 end
 return row, setVisual
 end
-local function aimbotSelectorRow(parent, order)
+function aimbotSelectorRow(parent, order)
 local holder = Instance.new("Frame")
 holder.Name = "Aimbot Mode"
 holder.BackgroundColor3 = COLORS.row
@@ -4514,7 +4525,7 @@ end)
 setMode(selectedAimbotMode)
 return holder, setMode
 end
-local function autoStealSelectorRow(parent, order)
+function autoStealSelectorRow(parent, order)
 local holder = Instance.new("Frame")
 holder.Name = "Auto Steal Mode"
 holder.BackgroundColor3 = COLORS.row
@@ -4803,7 +4814,7 @@ end)
 end
 end
 _G.AceMirrorTPDownRow, _G.AceMirrorTPDownSetVisual, _G.AceMirrorTPDownBtn = _G.AceActionToggleRow(Combat, "Mirror TP Down (Recommended)", mirrorTPDownEnabled, 7.1)
-local mirrorTPDownLabel = _G.AceMirrorTPDownRow and _G.AceMirrorTPDownRow:FindFirstChild("Label")
+mirrorTPDownLabel = _G.AceMirrorTPDownRow and _G.AceMirrorTPDownRow:FindFirstChild("Label")
 if mirrorTPDownLabel then mirrorTPDownLabel.TextSize = 10 end
 if _G.AceMirrorTPDownBtn then
 _G.AceMirrorTPDownBtn.MouseButton1Click:Connect(function()
@@ -5635,7 +5646,7 @@ function disableNoCamCollision()
 __ace_src_disableNoCamCollision()
 noCamCollisionEnabled = false
 end
-local function __AceDuelsSetupVisualsUI()
+function __AceDuelsSetupVisualsUI()
 local Utility = pages.VISUALS
 local skyThemes = SKY_PRESETS_LIST or {"Off", "Night", "Aurora", "Sunset", "Galaxy", "Tech", "Sakura"}
 local skyIndex = 1
@@ -5874,7 +5885,7 @@ aceMainScale = Main:FindFirstChild("AceMainScale") or Instance.new("UIScale")
 aceMainScale.Name = "AceMainScale"
 aceMainScale.Scale = aceGuiScaleValue
 aceMainScale.Parent = Main
-local function applyAceProgressBarScale()
+function applyAceProgressBarScale()
 local sg = PlayerGui:FindFirstChild("StealBarGui")
 local bar = sg and sg:FindFirstChild("StealBar")
 if not bar then return end
@@ -6266,7 +6277,7 @@ _G.AceNormalAimbotOn = false; _G.AceAntiBypassAimbotOn = false; _G.AceAntiDesync
 antiRagdollEnabled = false; infJumpEnabled = false; autoTPEnabled = false
 batCounterEnabled = false; medCounterEnabled = false; antiKickEnabled = false; autoResetOnMedEnabled = false
 _G.AceStopBodyLock()
-_G.AceBodyLock.radius = 60
+_G.AceBodyLock.radius = 15
 espEnabled = false; showTracerEnabled = false; ragdollCountdownEnabled = false
 fpsBoostEnabled = false; antiLagVisualEnabled = false; nukeOptimiserEnabled = false
 fovEnabled = false; fovValue = 70; noCamCollisionEnabled = false; _G.AceNoPlayerCollisionEnabled = false
