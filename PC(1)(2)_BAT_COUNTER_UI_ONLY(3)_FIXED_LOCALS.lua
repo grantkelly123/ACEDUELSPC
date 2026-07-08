@@ -113,10 +113,7 @@ local fovEnabled = false
 local fovValue = 70
 local noCamCollisionEnabled = false
 _G.AceNoPlayerCollisionEnabled = _G.AceNoPlayerCollisionEnabled or false
-_G.AceBodyLock = _G.AceBodyLock or {enabled=false, radius=60, conn=nil, target=nil}
-_G.AceRagdollTP = _G.AceRagdollTP or {enabled=false, conn=nil, was=false, busy=false, side="UNKNOWN", sideLocked=false, setVisual=nil, mode="My Base", setMode=nil, modeRow=nil}
-if _G.AceRagdollTP.mode == "Opponent Side" then _G.AceRagdollTP.mode = "Opponent Base" end
-if _G.AceRagdollTP.mode ~= "Opponent Base" then _G.AceRagdollTP.mode = "My Base" end
+_G.AceBodyLock = _G.AceBodyLock or {enabled=false, radius=15, conn=nil, target=nil}
 local customFontVisualEnabled = false
 local skyTheme = "Off"
 local setPlayerESPVisual = nil
@@ -225,173 +222,6 @@ pcall(function() if setAutoTPVisual then setAutoTPVisual(false) end end)
 pcall(saveAceConfig)
 end
 end
-function _G.AceRagdollTPAimbotLocked()
-return (_G.AceNormalAimbotOn == true) or (_G.AceAntiBypassAimbotOn == true) or (_G.AceAntiDesyncAimbotOn == true)
-end
-function _G.AceRagdollTPGetOwnerText(plotSign)
-for _, child in ipairs(plotSign:GetDescendants()) do
-if child:IsA("SurfaceGui") then
-for _, label in ipairs(child:GetDescendants()) do
-if label:IsA("TextLabel") and label.Text ~= "" then return label.Text end
-end
-end
-end
-return ""
-end
-function _G.AceRagdollTPDetectSide()
-local plotPositions = {
-[3] = Vector3.new(-476.7524719238281, 10.464664459228516, 7.107429504394531),
-[7] = Vector3.new(-476.7524719238281, 10.464664459228516, 114.10742950439453),
-}
-local plotToSide = {[3] = "left", [7] = "right"}
-for plotNum, pos in pairs(plotPositions) do
-for _, obj in ipairs(workspace:GetDescendants()) do
-if obj:IsA("BasePart") and obj.Name == "PlotSign" and (obj.Position - pos).Magnitude < 1 then
-local ownerText = _G.AceRagdollTPGetOwnerText(obj)
-if ownerText:find(LP.Name, 1, true) or ownerText:find(LP.DisplayName, 1, true) then
-return plotToSide[plotNum] or (plotNum == 7 and "right" or "left")
-end
-end
-end
-end
-local root = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
-if root then
-local midZ = (99.24 + 23.89) / 2
-return root.Position.Z >= midZ and "right" or "left"
-end
-return nil
-end
-function _G.AceRagdollTPRefreshVisual()
-if _G.AceRagdollTP.setVisual then _G.AceRagdollTP.setVisual(_G.AceRagdollTP.enabled == true) end
-if _G.AceRagdollTP.modeRow then
-_G.AceRagdollTP.modeRow.Visible = _G.AceRagdollTP.enabled == true
-end
-end
-function _G.AceRagdollTPMove(pos, facePos)
-local char = LP.Character
-if not char then return end
-if facePos then
-char:PivotTo(CFrame.new(pos, Vector3.new(facePos.X, pos.Y, facePos.Z)))
-else
-char:PivotTo(CFrame.new(pos))
-end
-for _, part in ipairs(char:GetDescendants()) do
-if part:IsA("BasePart") then
-part.AssemblyLinearVelocity = Vector3.zero
-part.AssemblyAngularVelocity = Vector3.zero
-end
-end
-end
-function _G.AceRagdollTPTeleportSide(side)
-if _G.AceRagdollTPAimbotLocked() then return end
-if _G.AceRagdollTP.busy then return end
-_G.AceRagdollTP.busy = true
-task.spawn(function()
-local checkpointA = Vector3.new(-472.60, -7.00, 57.52)
-local checkpointL = Vector3.new(-472.65, -7.00, 95.69)
-local checkpointR = Vector3.new(-471.76, -7.00, 26.22)
-local finalL = Vector3.new(-483.59, -5.04, 99.24)
-local finalR = Vector3.new(-483.51, -5.10, 23.89)
-local faceL = Vector3.new(-482.25, -4.96, 92.09)
-local faceR = Vector3.new(-482.06, -6.93, 35.47)
-local finalTarget, faceTarget
-_G.AceRagdollTPMove(checkpointA)
-task.wait(0.1)
-if side == "right" then
-_G.AceRagdollTPMove(checkpointR)
-task.wait(0.1)
-finalTarget, faceTarget = finalR, faceR
-else
-_G.AceRagdollTPMove(checkpointL)
-task.wait(0.1)
-finalTarget, faceTarget = finalL, faceL
-end
-_G.AceRagdollTPMove(finalTarget, faceTarget)
-for _ = 1, 4 do
-task.wait(0.075)
-_G.AceRagdollTPMove(finalTarget, faceTarget)
-end
-task.wait(1.25)
-_G.AceRagdollTP.busy = false
-end)
-end
-function _G.AceRagdollTPRunAuto()
-if _G.AceRagdollTPAimbotLocked() then return end
-local side = _G.AceRagdollTP.side
-if side == "UNKNOWN" or not side then
-side = _G.AceRagdollTPDetectSide() or "left"
-_G.AceRagdollTP.side = side
-end
-if _G.AceRagdollTP.mode == "My Base" then
-side = (side == "right") and "left" or "right"
-end
-_G.AceRagdollTPTeleportSide(side)
-end
-function _G.AceRagdollTPIsRagdolled(char)
-if not char then return false end
-local hum = char:FindFirstChildOfClass("Humanoid")
-if not hum then return false end
-local state = hum:GetState()
-if state == Enum.HumanoidStateType.Physics or state == Enum.HumanoidStateType.FallingDown or state == Enum.HumanoidStateType.Ragdoll then return true end
-for _, obj in ipairs(char:GetDescendants()) do
-if obj:IsA("Motor6D") and obj.Enabled == false then return true end
-end
-return false
-end
-function _G.AceStartRagdollTP()
-_G.AceRagdollTP.enabled = true
-if _G.AceRagdollTP.conn then return end
-_G.AceRagdollTP.was = false
-_G.AceRagdollTP.conn = RunService.Heartbeat:Connect(function()
-if not _G.AceRagdollTP.enabled then return end
-if _G.AceRagdollTPAimbotLocked() then _G.AceRagdollTP.was = _G.AceRagdollTPIsRagdolled(LP.Character); return end
-local ragNow = _G.AceRagdollTPIsRagdolled(LP.Character)
-if ragNow and not _G.AceRagdollTP.was then _G.AceRagdollTPRunAuto() end
-_G.AceRagdollTP.was = ragNow
-end)
-_G.AceRagdollTPRefreshVisual()
-end
-function _G.AceStopRagdollTP()
-_G.AceRagdollTP.enabled = false
-if _G.AceRagdollTP.conn then pcall(function() _G.AceRagdollTP.conn:Disconnect() end); _G.AceRagdollTP.conn = nil end
-_G.AceRagdollTP.was = false
-_G.AceRagdollTP.busy = false
-_G.AceRagdollTPRefreshVisual()
-end
-function _G.AceSetRagdollTP(on, skipSave)
-if on then _G.AceStartRagdollTP() else _G.AceStopRagdollTP() end
-if not skipSave then pcall(saveAceConfig) end
-end
-task.spawn(function()
-while not _G.AceRagdollTP.sideLocked do
-task.wait(0.5)
-local side = _G.AceRagdollTPDetectSide()
-if side then
-local detectCount = 0
-local detectConn
-detectConn = RunService.Heartbeat:Connect(function()
-local currentSide = _G.AceRagdollTPDetectSide()
-if currentSide and currentSide == side then
-detectCount += 1
-if detectCount >= 3 then
-_G.AceRagdollTP.side = currentSide
-_G.AceRagdollTP.sideLocked = true
-if detectConn then detectConn:Disconnect() end
-end
-else
-detectCount = 0
-if detectConn then detectConn:Disconnect() end
-end
-end)
-repeat task.wait() until _G.AceRagdollTP.sideLocked or not detectConn.Connected
-end
-end
-end)
-LP.CharacterAdded:Connect(function()
-_G.AceRagdollTP.was = false
-_G.AceRagdollTP.busy = false
-if _G.AceRagdollTP.enabled then _G.AceStartRagdollTP() end
-end)
 local dropBrainrotActive = false
 local DROP_ASCEND_DURATION = 0.2
 local DROP_ASCEND_SPEED = 150
@@ -1044,8 +874,6 @@ currentSpeedMode = currentSpeedMode,
 autoCarrySpeedEnabled = autoCarrySpeedEnabled == true,
 autoTPEnabled = autoTPEnabled,
 autoTPHeight = autoTPHeight,
-ragdollTPEnabled = _G.AceRagdollTP.enabled == true,
-ragdollTPMode = _G.AceRagdollTP.mode,
 infJumpEnabled = infJumpEnabled,
 antiRagdollEnabled = antiRagdollEnabled == true,
 selectedAnimationPack = selectedAnimationPack,
@@ -1146,8 +974,6 @@ if currentSpeedMode ~= "Normal" and currentSpeedMode ~= "Carry" and currentSpeed
 autoCarrySpeedEnabled = data.autoCarrySpeedEnabled == true
 autoTPEnabled = data.autoTPEnabled == true
 autoTPHeight = tonumber(data.autoTPHeight) or autoTPHeight
-_G.AceRagdollTP.enabled = data.ragdollTPEnabled == true
-_G.AceRagdollTP.mode = (data.ragdollTPMode == "Opponent Base" or data.ragdollTPMode == "Opponent Side") and "Opponent Base" or "My Base"
 infJumpEnabled = data.infJumpEnabled == true
 antiRagdollEnabled = data.antiRagdollEnabled == true
 selectedAnimationPack = data.selectedAnimationPack or selectedAnimationPack
@@ -1185,7 +1011,7 @@ _G.AceAntiDesyncAimbotOn = data.antiDesyncAimbotEnabled == true
 batCounterEnabled = data.batCounterEnabled == true
 medCounterEnabled = data.medCounterEnabled == true
 _G.AceBodyLock.enabled = data.bodyLockEnabled == true
-_G.AceBodyLock.radius = math.clamp(tonumber(data.bodyLockRadius) or 60, 1, 500)
+_G.AceBodyLock.radius = math.clamp(tonumber(data.bodyLockRadius) or 15, 1, 500)
 antiKickEnabled = data.safeMode == true
 autoResetOnMedEnabled = data.autoResetOnMedEnabled == true
 espEnabled = data.espEnabled == true
@@ -1712,46 +1538,56 @@ _G.AceClearBatCounterConns()
 _G.AceStopBatCounterFaceLock(true)
 _G.AceBatCounterState.attacking = false
 end
-_G.AceBodyLock = _G.AceBodyLock or {enabled=false, radius=60, conn=nil, target=nil}
+_G.AceBodyLock = _G.AceBodyLock or {enabled=false, radius=15, conn=nil, target=nil}
 function _G.AceGetBodyLockTarget()
 local root = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
 if not root then return nil end
-local closest, minimumDistance = nil, math.huge
-local radius = math.clamp(tonumber(_G.AceBodyLock.radius) or 60, 1, 500)
+local closestPlayerRoot = nil
+local closestDistance = math.clamp(tonumber(_G.AceBodyLock.radius) or 15, 1, 500)
 for _, player in ipairs(Players:GetPlayers()) do
 if player ~= LP and player.Character then
 local targetRoot = player.Character:FindFirstChild("HumanoidRootPart")
 local targetHumanoid = player.Character:FindFirstChildOfClass("Humanoid")
 if targetRoot and targetHumanoid and targetHumanoid.Health > 0 then
-local distance = (targetRoot.Position - root.Position).Magnitude
-if distance <= radius and distance < minimumDistance then closest, minimumDistance = targetRoot, distance end
+local distance = (root.Position - targetRoot.Position).Magnitude
+if distance <= closestDistance then
+closestDistance = distance
+closestPlayerRoot = targetRoot
 end
 end
 end
-return closest
+end
+return closestPlayerRoot
 end
 function _G.AceStartBodyLock()
 if _G.AceBodyLock.conn then _G.AceBodyLock.conn:Disconnect() end
 _G.AceBodyLock.enabled = true
-local humanoid = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
-if humanoid then humanoid.AutoRotate = false end
 _G.AceBodyLock.conn = RunService.RenderStepped:Connect(function()
 if not _G.AceBodyLock.enabled then return end
 local character = LP.Character
 local root = character and character:FindFirstChild("HumanoidRootPart")
 local hum = character and character:FindFirstChildOfClass("Humanoid")
-if not root or not hum or hum.Health <= 0 or hum.FloorMaterial == Enum.Material.Air then return end
-hum.AutoRotate = false
+if not root or not hum then return end
 local target = _G.AceGetBodyLockTarget()
 _G.AceBodyLock.target = target
-if not target then root.AssemblyAngularVelocity = Vector3.zero; return end
-local velocity = target.AssemblyLinearVelocity
-local predictionTime = math.clamp(velocity.Magnitude / 150, 0.05, 0.2)
-local predictedPosition = target.Position + velocity * predictionTime
-local goal = CFrame.lookAt(root.Position, Vector3.new(predictedPosition.X, root.Position.Y, predictedPosition.Z))
-local _, yaw = (root.CFrame:Inverse() * goal):ToEulerAnglesXYZ()
-yaw = math.clamp(yaw, -2.5, 2.5)
-root.AssemblyAngularVelocity = root.CFrame:VectorToWorldSpace(Vector3.new(0, yaw * 42, 0))
+if target then
+hum.AutoRotate = false
+local myPos = root.Position
+local targetPos = target.Position
+local lookPos = Vector3.new(targetPos.X, myPos.Y, targetPos.Z)
+local toLook = lookPos - myPos
+if toLook.Magnitude > 0.1 then
+local goalCF = CFrame.lookAt(myPos, lookPos)
+local curCF = root.CFrame
+local diffCF = curCF:Inverse() * goalCF
+local _, ry, _ = diffCF:ToEulerAnglesXYZ()
+local turnSpeed = 150
+root.AssemblyAngularVelocity = root.CFrame:VectorToWorldSpace(Vector3.new(0, ry * turnSpeed, 0))
+end
+else
+hum.AutoRotate = true
+root.AssemblyAngularVelocity = Vector3.zero
+end
 end)
 end
 function _G.AceStopBodyLock()
@@ -4813,110 +4649,6 @@ end)
 setMode(selectedStealMode)
 return holder, setMode
 end
-function _G.AceRagdollTPModeSelectorRow(parent, order)
-local holder = Instance.new("Frame")
-holder.Name = "Ragdoll TP Mode"
-holder.BackgroundColor3 = COLORS.row
-holder.BackgroundTransparency = 0.28
-holder.Size = UDim2.new(1, -4, 0, 42)
-holder.BorderSizePixel = 0
-holder.LayoutOrder = order
-holder.ZIndex = 4
-holder.ClipsDescendants = true
-holder.Parent = parent
-corner(holder, 9)
-stroke(holder, COLORS.strokeSoft, 1.15, 0.38)
-local slide = Instance.new("Frame")
-slide.Name = "SelectedSlide"
-slide.BackgroundColor3 = Color3.fromRGB(58, 58, 64)
-slide.BackgroundTransparency = 0.08
-slide.Size = UDim2.new(0.5, -3, 1, -8)
-slide.Position = UDim2.new(0, 4, 0, 4)
-slide.BorderSizePixel = 0
-slide.ZIndex = 5
-slide.Parent = holder
-corner(slide, 9)
-local slideStroke = Instance.new("UIStroke")
-slideStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-slideStroke.Color = Color3.fromRGB(235, 235, 245)
-slideStroke.Thickness = 1
-slideStroke.Transparency = 0.08
-slideStroke.Parent = slide
-local slideGradient = Instance.new("UIGradient")
-slideGradient.Color = ColorSequence.new({
-ColorSequenceKeypoint.new(0, Color3.fromRGB(24, 24, 28)),
-ColorSequenceKeypoint.new(0.5, Color3.fromRGB(46, 46, 52)),
-ColorSequenceKeypoint.new(1, Color3.fromRGB(18, 18, 22)),
-})
-slideGradient.Transparency = NumberSequence.new({
-NumberSequenceKeypoint.new(0, 0.08),
-NumberSequenceKeypoint.new(0.5, 0.02),
-NumberSequenceKeypoint.new(1, 0.08),
-})
-slideGradient.Parent = slide
-local myText = Instance.new("TextLabel")
-myText.Name = "MyBaseText"
-myText.BackgroundTransparency = 1
-myText.Text = "MY BASE"
-myText.TextColor3 = COLORS.white
-myText.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-myText.TextStrokeTransparency = 0.2
-myText.TextSize = 11
-myText.Font = Enum.Font.GothamSemibold
-myText.TextXAlignment = Enum.TextXAlignment.Center
-myText.Size = UDim2.new(0.5, 0, 1, 0)
-myText.Position = UDim2.new(0, 0, 0, 0)
-myText.ZIndex = 8
-myText.Parent = holder
-local oppText = Instance.new("TextLabel")
-oppText.Name = "OpponentBaseText"
-oppText.BackgroundTransparency = 1
-oppText.Text = "OPPONENT BASE"
-oppText.TextColor3 = COLORS.white
-oppText.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-oppText.TextStrokeTransparency = 0.2
-oppText.TextSize = 10
-oppText.Font = Enum.Font.GothamSemibold
-oppText.TextXAlignment = Enum.TextXAlignment.Center
-oppText.Size = UDim2.new(0.5, 0, 1, 0)
-oppText.Position = UDim2.new(0.5, 0, 0, 0)
-oppText.ZIndex = 8
-oppText.Parent = holder
-local myClick = Instance.new("TextButton")
-myClick.Name = "MyBaseClick"
-myClick.BackgroundTransparency = 1
-myClick.Text = ""
-myClick.AutoButtonColor = false
-myClick.Size = UDim2.new(0.5, 0, 1, 0)
-myClick.Position = UDim2.new(0, 0, 0, 0)
-myClick.ZIndex = 10
-myClick.Parent = holder
-local oppClick = Instance.new("TextButton")
-oppClick.Name = "OpponentBaseClick"
-oppClick.BackgroundTransparency = 1
-oppClick.Text = ""
-oppClick.AutoButtonColor = false
-oppClick.Size = UDim2.new(0.5, 0, 1, 0)
-oppClick.Position = UDim2.new(0.5, 0, 0, 0)
-oppClick.ZIndex = 10
-oppClick.Parent = holder
-local function setMode(mode, skipSave)
-mode = (mode == "Opponent Base" or mode == "Opponent Side") and "Opponent Base" or "My Base"
-_G.AceRagdollTP.mode = mode
-local onOpponent = mode == "Opponent Base"
-tween(slide, {Position = onOpponent and UDim2.new(0.5, -1, 0, 4) or UDim2.new(0, 4, 0, 4)}, 0.18)
-tween(myText, {TextTransparency = onOpponent and 0.18 or 0, TextStrokeTransparency = onOpponent and 0.38 or 0.2}, 0.14)
-tween(oppText, {TextTransparency = onOpponent and 0 or 0.18, TextStrokeTransparency = onOpponent and 0.2 or 0.38}, 0.14)
-if not skipSave then saveAceConfig() end
-end
-myClick.MouseButton1Click:Connect(function() setMode("My Base") end)
-oppClick.MouseButton1Click:Connect(function() setMode("Opponent Base") end)
-_G.AceRagdollTP.setMode = setMode
-_G.AceRagdollTP.modeRow = holder
-holder.Visible = _G.AceRagdollTP.enabled == true
-setMode(_G.AceRagdollTP.mode, true)
-return holder, setMode
-end
 -- Spread the large one-time UI build over several frames so executing the
 -- loadstring does not monopolize the client thread and visibly freeze play.
 task.wait()
@@ -5005,17 +4737,6 @@ end
 autoTPHeightBox.Text = tostring(autoTPHeight)
 saveAceConfig()
 end)
-_aceRow, _G.AceRagdollTP.setVisual = toggleRow(Movement, "Ragdoll TP", _G.AceRagdollTP.enabled == true, 12)
-do
-_aceBtn = _aceRow and _aceRow:FindFirstChild("ToggleButton")
-if _aceBtn then
-_aceBtn.Activated:Connect(function()
-if _G.AceSetRagdollTP then _G.AceSetRagdollTP(not _G.AceRagdollTP.enabled) end
-end)
-end
-if _G.AceRagdollTP.enabled then _G.AceStartRagdollTP() else _G.AceStopRagdollTP() end
-end
-if _G.AceRagdollTPModeSelectorRow then _G.AceRagdollTPModeSelectorRow(Movement, 13) end
 section(Movement, "JUMP", 15)
 _, setInfJumpVisual = toggleRow(Movement, "Infinite Jump", infJumpEnabled, 16)
 do
@@ -6554,11 +6275,9 @@ _G.AceAntiBypassAimbotSpeed = 58; _G.AceAntiBypassLaggerAimbotSpeed = 40; ANTI_D
 autoSwingEnabled = false; mirrorTPDownEnabled = false; antiDesyncAutoSwingEnabled = false
 _G.AceNormalAimbotOn = false; _G.AceAntiBypassAimbotOn = false; _G.AceAntiDesyncAimbotOn = false
 antiRagdollEnabled = false; infJumpEnabled = false; autoTPEnabled = false
-if _G.AceSetRagdollTP then _G.AceSetRagdollTP(false, true) else _G.AceRagdollTP.enabled = false end
-_G.AceRagdollTP.mode = "My Base"
 batCounterEnabled = false; medCounterEnabled = false; antiKickEnabled = false; autoResetOnMedEnabled = false
 _G.AceStopBodyLock()
-_G.AceBodyLock.radius = 60
+_G.AceBodyLock.radius = 15
 espEnabled = false; showTracerEnabled = false; ragdollCountdownEnabled = false
 fpsBoostEnabled = false; antiLagVisualEnabled = false; nukeOptimiserEnabled = false
 fovEnabled = false; fovValue = 70; noCamCollisionEnabled = false; _G.AceNoPlayerCollisionEnabled = false
@@ -6577,8 +6296,6 @@ applyDefaultAceKeybinds()
 refreshAllSpeedKeybinds()
 refreshTPDownKeybind()
 if stopAutoTP then stopAutoTP() end
-if _G.AceRagdollTPRefreshVisual then _G.AceRagdollTPRefreshVisual() end
-if _G.AceRagdollTP.setMode then _G.AceRagdollTP.setMode(_G.AceRagdollTP.mode, true) end
 if stopAntiRagdoll then stopAntiRagdoll() end
 if normalSpeedBox then normalSpeedBox.Text = tostring(NS) end
 if carrySpeedBox then carrySpeedBox.Text = tostring(CS) end
@@ -7137,9 +6854,6 @@ _G.AceDuelsForceSyncLoadedButtons = function()
 pcall(function()
 if setAutoTPVisual then setAutoTPVisual(autoTPEnabled) end
 if autoTPEnabled then startAutoTP() else stopAutoTP() end
-if _G.AceRagdollTPRefreshVisual then _G.AceRagdollTPRefreshVisual() end
-if _G.AceRagdollTP.setMode then _G.AceRagdollTP.setMode(_G.AceRagdollTP.mode, true) end
-if _G.AceRagdollTP.enabled then _G.AceStartRagdollTP() else _G.AceStopRagdollTP() end
 end)
 pcall(function()
 if setInfJumpVisual then setInfJumpVisual(infJumpEnabled) end
@@ -7259,9 +6973,6 @@ _G.AceDuelsApplySavedGameplayStates = function()
 pcall(function()
 if setAutoTPVisual then setAutoTPVisual(autoTPEnabled == true) end
 if autoTPEnabled then startAutoTP() else stopAutoTP() end
-if _G.AceRagdollTPRefreshVisual then _G.AceRagdollTPRefreshVisual() end
-if _G.AceRagdollTP.setMode then _G.AceRagdollTP.setMode(_G.AceRagdollTP.mode, true) end
-if _G.AceRagdollTP.enabled then _G.AceStartRagdollTP() else _G.AceStopRagdollTP() end
 end)
 pcall(function()
 if setInfJumpVisual then setInfJumpVisual(infJumpEnabled == true) end
